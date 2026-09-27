@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Randomized Voice Flashcards</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      margin: 0;
+      min-height: 100vh;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 550px;
+      background: #1e293b;
+      padding: 24px;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+      border: 1px solid #334155;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+      color: #38bdf8;
+      font-size: 24px;
+    }
+
+    .input-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #475569;
+      background: #0f172a;
+      color: #fff;
+      border-radius: 8px;
+      font-size: 15px;
+      resize: vertical;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-add {
+      background-color: #3b82f6;
+      color: white;
+    }
+    .btn-add:hover { background-color: #2563eb; }
+
+    .btn-start {
+      background-color: #10b981;
+      color: white;
+    }
+    .btn-start:hover { background-color: #059669; }
+
+    .card {
+      border: 2px solid #334155;
+      border-radius: 12px;
+      padding: 30px 20px;
+      text-align: center;
+      margin-top: 15px;
+      background: #0f172a;
+      transition: all 0.4s ease;
+    }
+
+    /* Success / Light up animation */
+    .card.success {
+      background-color: #064e3b !important;
+      border-color: #10b981 !important;
+      box-shadow: 0 0 25px rgba(16, 185, 129, 0.6);
+    }
+
+    .card-title {
+      font-size: 28px;
+      margin: 0 0 10px 0;
+      color: #f1f5f9;
+    }
+
+    .mic-btn {
+      background-color: #ef4444;
+      color: white;
+      margin-top: 20px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 16px;
+    }
+
+    .mic-btn.listening {
+      background-color: #f59e0b;
+      animation: pulse 1s infinite alternate;
+    }
+
+    @keyframes pulse {
+      from { transform: scale(1); }
+      to { transform: scale(1.03); }
+    }
+
+    .status {
+      margin-top: 15px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #94a3b8;
+    }
+
+    .transcript {
+      margin-top: 8px;
+      font-style: italic;
+      color: #cbd5e1;
+      min-height: 24px;
+    }
+
+    .list-info {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-top: 5px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>Fossil Voice Flashcards</h1>
+
+    <!-- ADD DEFINITION ONLY -->
+    <div class="input-section">
+      <label><strong>Paste or Type Definition:</strong></label>
+      <textarea id="defInput" rows="3" placeholder="e.g. A hollow impression left in rock after the original organism decayed..."></textarea>
+      
+      <div class="btn-group">
+        <button class="btn-add" onclick="addDefinition()">Add Definition</button>
+        <button class="btn-start" onclick="startRandomizedSession()">🚀 Start Practice (Randomize)</button>
+      </div>
+      <div id="deckCount" class="list-info">Deck contains 0 custom cards. (Default fossil set included)</div>
+    </div>
+
+    <!-- FLASHCARD DISPLAY -->
+    <div id="cardDisplay" class="card" style="display:none;">
+      <h2 id="cardTerm" class="card-title">Title</h2>
+      <p style="color: #64748b; font-size: 13px; margin: 0;">Say the definition out loud!</p>
+      
+      <button id="micBtn" class="mic-btn" onclick="toggleSpeech()">🎤 Speak Definition</button>
+      
+      <div id="status" class="status">Click mic to answer</div>
+      <div id="transcript" class="transcript"></div>
+    </div>
+  </div>
+
+  <script>
+    // Known fossil definitions dictionary to map definitions back to titles
+    const knownDefinitions = [
+      {
+        term: "Body Fossil",
+        definition: "the preserved physical remains of an organism such as bones, teeth, shells, or leaves"
+      },
+      {
+        term: "Trace Fossil",
+        definition: "traces or evidence of an organism's activity, such as footprints, burrows, nests, or trails"
+      },
+      {
+        term: "Mold Fossil",
+        definition: "a hollow impression left in rock after the original organism decayed"
+      },
+      {
+        term: "Cast Fossil",
+        definition: "formed when minerals fill in a mold fossil and harden, creating a three-dimensional copy of the organism"
+      },
+      {
+        term: "Carbon Film",
+        definition: "a thin carbon outline left when an organism is compressed over time"
+      },
+      {
+        term: "Preserved Remains",
+        definition: "an organism or part of an organism preserved in materials such as amber, ice, or tar environments"
+      }
+    ];
+
+    let customDeck = [];
+    let currentShuffledDeck = [];
+    let currentIndex = 0;
+    let recognition = null;
+    let isListening = false;
+
+    // Detect Title from definition text
+    function detectTitleFromDefinition(defText) {
+      const lowerDef = defText.toLowerCase();
+      
+      // Check against known definitions
+      for (let item of knownDefinitions) {
+        if (lowerDef.includes(item.definition) || item.definition.includes(lowerDef)) {
+          return item.term;
+        }
+      }
+
+      // Keyword fallback detectors if custom text is sent
+      if (lowerDef.includes("hollow impression") || lowerDef.includes("decayed")) return "Mold Fossil";
+      if (lowerDef.includes("minerals fill") || lowerDef.includes("three-dimensional copy")) return "Cast Fossil";
+      if (lowerDef.includes("physical remains") || lowerDef.includes("bones")) return "Body Fossil";
+      if (lowerDef.includes("activity") || lowerDef.includes("footprints")) return "Trace Fossil";
+      if (lowerDef.includes("carbon outline") || lowerDef.includes("compressed")) return "Carbon Film";
+      if (lowerDef.includes("amber") || lowerDef.includes("ice")) return "Preserved Remains";
+
+      return "Custom Term " + (customDeck.length + 1);
+    }
+
+    function addDefinition() {
+      const defInput = document.getElementById('defInput');
+      const text = defInput.value.trim();
+
+      if (!text) {
+        alert("Please enter a definition first!");
+        return;
+      }
+
+      const autoTitle = detectTitleFromDefinition(text);
+      customDeck.push({ term: autoTitle, definition: text });
+
+      defInput.value = '';
+      updateDeckCount();
+      alert(`Added card for: "${autoTitle}"`);
+    }
+
+    function updateDeckCount() {
+      document.getElementById('deckCount').innerText = 
+        `Deck contains ${customDeck.length} custom cards + ${knownDefinitions.length} default fossil cards.`;
+    }
+
+    // Fisher-Yates Shuffle algorithm to randomize order
+    function shuffleArray(array) {
+      let arr = [...array];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function startRandomizedSession() {
+      // Combine built-in defaults with custom definitions
+      let fullList = [...knownDefinitions, ...customDeck];
+      
+      if (fullList.length === 0) {
+        alert("No definitions available!");
+        return;
+      }
+
+      // Randomize card order
+      currentShuffledDeck = shuffleArray(fullList);
+      currentIndex = 0;
+      showCard(0);
+    }
+
+    function showCard(index) {
+      if (index >= currentShuffledDeck.length) {
+        document.getElementById('cardTerm').innerText = "🎉 All Cards Completed!";
+        document.getElementById('micBtn').style.display = "none";
+        document.getElementById('status').innerText = "Click Start Practice to play a new randomized round!";
+        document.getElementById('transcript').innerText = "";
+        return;
+      }
+
+      currentIndex = index;
+      const currentCard = currentShuffledDeck[currentIndex];
+      const cardElem = document.getElementById('cardDisplay');
+      
+      cardElem.style.display = 'block';
+      cardElem.classList.remove('success');
+      
+      // Displays title automatically on screen
+      document.getElementById('cardTerm').innerText = currentCard.term;
+      document.getElementById('status').innerText = `Card ${index + 1} of ${currentShuffledDeck.length} — Click mic and speak the definition!`;
+      document.getElementById('status').style.color = "#94a3b8";
+      document.getElementById('transcript').innerText = "";
+      document.getElementById('micBtn').style.display = "flex";
+    }
+
+    // Speech Recognition setup
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      recognition.onstart = function() {
+        isListening = true;
+        const btn = document.getElementById('micBtn');
+        btn.classList.add('listening');
+        btn.innerText = "🎙️ Listening... (Say definition)";
+        document.getElementById('status').innerText = "Listening...";
+      };
+
+      recognition.onresult = function(event) {
+        let transcriptStr = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcriptStr += event.results[i][0].transcript;
+        }
+        document.getElementById('transcript').innerText = `"${transcriptStr}"`;
+
+        checkAnswer(transcriptStr);
+      };
+
+      recognition.onerror = function(event) {
+        document.getElementById('status').innerText = "Error: " + event.error;
+        stopSpeech();
+      };
+
+      recognition.onend = function() {
+        stopSpeech();
+      };
+    } else {
+      alert("Speech Recognition is not supported on this browser. Use Chrome or Edge.");
+    }
+
+    function toggleSpeech() {
+      if (!recognition) return;
+      if (isListening) {
+        recognition.stop();
+      } else {
+        recognition.start();
+      }
+    }
+
+    function stopSpeech() {
+      isListening = false;
+      const btn = document.getElementById('micBtn');
+      btn.classList.remove('listening');
+      btn.innerText = "🎤 Speak Definition";
+    }
+
+    // Matches spoken keywords against target definition
+    function checkAnswer(spokenText) {
+      if (!spokenText || !currentShuffledDeck[currentIndex]) return;
+      
+      const targetDef = currentShuffledDeck[currentIndex].definition.toLowerCase();
+      const spoken = spokenText.toLowerCase();
+
+      // Extract key words (> 3 letters)
+      const targetWords = targetDef.match(/\b[a-z]{4,}\b/g) || [];
+      
+      let matchedCount = 0;
+      targetWords.forEach(word => {
+        if (spoken.includes(word)) matchedCount++;
+      });
+
+      const matchRatio = targetWords.length > 0 ? (matchedCount / targetWords.length) : 0;
+
+      // Lights up green if 35%+ of keywords match or direct phrase match
+      if (matchRatio >= 0.35 || spoken.includes(targetDef)) {
+        if (recognition) recognition.stop();
+        
+        const cardElem = document.getElementById('cardDisplay');
+        cardElem.classList.add('success');
+        document.getElementById('status').innerText = "✨ Correct! Moving to next card...";
+        document.getElementById('status').style.color = "#10b981";
+
+        setTimeout(() => {
+          showCard(currentIndex + 1);
+        }, 1800);
+      }
+    }
+
+    updateDeckCount();
+  </script>
+</body>
+</html>
